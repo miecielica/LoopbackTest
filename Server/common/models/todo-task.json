@@ -1,0 +1,45 @@
+{
+  "name": "TodoTask",
+  "base": "PersistedModel",
+  "idInjection": true,
+  "options": {
+    "validateUpsert": true
+  },
+  "properties": {
+    "date": {
+      "type": "date",
+      "required": true
+    },
+    "isDone": {
+      "type": "boolean",
+      "required": true
+    },
+    "isDeleted": {
+      "type": "boolean",
+      "required": true
+    },
+    "isFavourite": {
+      "type": "boolean",
+      "required": true
+    },
+    "category": {
+      "type": "string",
+      "required": true
+    },
+    "title": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "validations": [],
+  "relations": {},
+  "acls": [
+    {
+      "accessType": "*",
+      "principalType": "ROLE",
+      "principalId": "$everyone",
+      "permission": "ALLOW"
+    }
+  ],
+  "methods": {}
+}
