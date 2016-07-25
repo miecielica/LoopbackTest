@@ -1,0 +1,217 @@
+﻿<#@ template debug="false" hostspecific="false" language="C#" #>
+<#@ output extension=".cs"#>
+<#@ assembly name="System.Core" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.IO" #>
+<#@ assembly name="Microsoft.CSharp" #>
+<#@ import namespace="Microsoft.CSharp" #>
+<#/*Uncomment the following line when debugging */ #>
+<#/*@assembly name="C:/Users/PerfectedTech/Documents/lbxamarinsdk-generator/C#/LBXamarinSDK/bin/Debug/Newtonsoft.Json.dll"*/#>
+<# /* ^^ */ #>
+<#@ import namespace="Newtonsoft.Json" #>
+<#@ import namespace="Newtonsoft.Json.Linq" #>
+<#@ parameter name="jsonModel" type="System.String" #>
+/**
+ *** Dynamic Models ***
+ */
+<#
+// Uncomment the following line when debugging:
+//string jsonModel = File.ReadAllText("D:/debug.txt");
+// ^^
+#>
+
+namespace LBXamarinSDK
+{
+<#
+// Iterate over all the models to create a class for them
+JObject modelsJSON = JObject.Parse(jsonModel);
+List<String> modelNames = modelsJSON.First.First.Select(x => (string)x.First).ToList();
+foreach (var model in modelsJSON.First.First)
+{
+	// Determine model name
+	String modelName = model.First.First.ToString();
+
+	// Determine inheritence of the model
+	string specifiedInheritence = (String)model.ElementAt(2).First;
+	string inheritenceString = (specifiedInheritence == "" ||
+								!modelNames.Contains(specifiedInheritence) || 
+								specifiedInheritence == modelName) 
+									? "LBModel" : specifiedInheritence;
+
+
+	// Write class declaration:
+#>
+	public partial class <#= modelName #> : <#= inheritenceString#>
+	{
+<#		
+		// Get data of the model's fields
+		var rawFieldsData = JObject.Parse(model.ElementAt(4).First.ToString());
+        List<string> fields = rawFieldsData.Properties().Select(p => p.Name).ToList();
+		List<string> fieldsTypes = rawFieldsData.PropertyValues().Select(p => p.First.First.ToString()).ToList();
+		List<bool> fieldIsArrayList = rawFieldsData.PropertyValues().Select(p => (bool)p.ElementAt(3).First).ToList();
+		List<string> fieldsNecessities = rawFieldsData.PropertyValues().ToList().Select(p => p.First.Next.First.ToString()).ToList();
+
+		// Determine the ID field of the model
+		String IDField = "";
+		const string idType = "string";
+		foreach (var fieldProperties in model.ElementAt(4).First)
+			if ((bool)fieldProperties.First.ElementAt(2).First)
+            {
+				IDField = (String)(JObject.Parse("{" + fieldProperties.ToString() + "}")).Properties().Select(p => p.Name).First();
+				break;
+			}
+
+		// Add all fields to the class with Json serialization tags
+        for (int i = 0; i != fields.Count; ++i)
+        {
+			string fieldAccessTag;
+			string fieldType;
+			string fieldName;
+
+			// Do we need a nullable interface for the field or not?
+			if(isPrimitiveType(jsTypeToCsType(fieldsTypes.ElementAt(i))) && !fieldIsArrayList.ElementAt(i) && fields.ElementAt(i) != IDField)
+            {
+				/* This is a primitive type which needs to be exposed to the serializer as nullable, but to the user as true primitive.
+				*  Therefore we add a private nullable field and an true primitive interface field for the user.
+				*/
+				fieldAccessTag = "private";
+				fieldType = nullablify(jsTypeToCsType(fieldsTypes.ElementAt(i)));
+				fieldName = createNullableName(createLegalVariable(fields.ElementAt(i)));
+
+				// Add an interface:
+#>		[JsonIgnore]
+		public <#=jsTypeToCsType(fieldsTypes.ElementAt(i))#> <#= createLegalVariable(fields.ElementAt(i)) #>
+		{
+			get { return <#=createNullableName(createLegalVariable(fields.ElementAt(i)))#> ?? new <#= jsTypeToCsType(fieldsTypes.ElementAt(i)) #>(); }
+			set { <#= createNullableName(createLegalVariable(fields.ElementAt(i)))#> = value; }
+		}
+<#
+            }
+			else // This is not a primitive type field, no special interface needed.
+            {
+				fieldAccessTag = "public";
+				fieldType = jsTypeToCsType(fieldsTypes.ElementAt(i));
+				fieldName = createLegalVariable(fields.ElementAt(i));
+			}
+
+			// Add the field itself:
+			#>		[JsonProperty ("<#=fields.ElementAt(i)#>", NullValueHandling = NullValueHandling.Ignore)]
+		<#= fieldAccessTag #> <#=fields.ElementAt(i) == IDField ? idType : fieldType#><#if(fieldIsArrayList.ElementAt(i)){#>[]<#}#> <#=fieldName#> { get; set; }
+
+<#}#>		
+		// This method identifies the ID field
+		public override string getID()
+		{
+			return <# if((bool)model.ElementAt(3).First == true) /* idInjection = true */ {#>id<#}else{#><##><#=IDField#><#}#>;
+		}
+	}
+<#}#>
+
+	// Relationship classes:
+<#
+// Create classes for responses and input of relationship type "hasAndBelongsToMany" 
+List<string> existentRelationshipResponses = new List<string>();
+foreach (var model in modelsJSON.First.First)
+{
+	foreach(var rel in model.ElementAt(6).First) {
+		if(rel != null && (string)rel.First.ElementAt(2).First == "hasAndBelongsToMany") {
+			string responseClassName = (string)model.First.First + (string)rel.First.ElementAt(1);
+			if(!existentRelationshipResponses.Contains(responseClassName))
+			{
+				existentRelationshipResponses.Add(responseClassName);
+
+				string firstFieldName = decapitalize((string)model.First.First) + "Id";
+				string secondFieldName = decapitalize((string)rel.First.ElementAt(1)) + "Id";
+#>
+	public class <#= responseClassName #> : LBModel
+	{
+		[Newtonsoft.Json.JsonProperty("id")]
+        public string id { get; set; }
+
+		[Newtonsoft.Json.JsonProperty("<#= firstFieldName #>")]
+        public string <#= firstFieldName #> { get; set; }
+
+		[Newtonsoft.Json.JsonProperty("<#= secondFieldName #>")]
+        public string <#= secondFieldName #> { get; set; }
+	}
+
+<#
+			}
+		}
+    }
+}
+
+if(existentRelationshipResponses.Count == 0) {#>	// None.
+<#}
+#>}
+// Eof
+<#+
+
+// Creates a valid field name: Avoid keywords, don't begin with numeric, etc
+private string createLegalVariable(string input)
+{
+	string result = input;
+	CSharpCodeProvider cs = new CSharpCodeProvider();
+	if(!cs.IsValidIdentifier(result))
+    {
+		result = "field_" + result;
+    }
+	return result;
+}
+
+// Decapitalizes a string
+public static string decapitalize(string input)
+{
+	if(string.IsNullOrEmpty(input))
+		return input;
+	return input.ElementAt(0).ToString().ToLower() + input.Substring(1);
+}
+
+// Creates a nullable typename out of a typename
+public string nullablify(string strType)
+{
+	return strType + "?";
+}
+
+// Creates a private member variable name by adding an underscore to the name
+public string createNullableName(string strName)
+{
+	return "_" + strName;
+}
+
+// Checks if the given type is primitive
+public bool isPrimitiveType(string strType)
+{
+	if(strType == "double" || strType == "DateTime" || strType == "bool")
+		return true;
+	return false;
+}
+
+// Converts a loopback type name to c# type name. E.g. Number to double
+public String jsTypeToCsType(String JSType)
+{
+	if(JSType == "Number")
+		return "double";
+
+	if(JSType == "GeoPoint")
+		return "GeoPoint";
+
+	if(JSType == "Buffer")
+		return "IList<int>";
+
+	if(JSType == "String")
+		return "String";
+
+	if(JSType == "Boolean")
+		return "bool";
+
+	if(JSType == "Date")
+		return "DateTime";
+
+	if(JSType == "ObjectID")
+		return "String";
+
+	return "Object";
+}#>

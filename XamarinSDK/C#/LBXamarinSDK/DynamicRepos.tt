@@ -1,0 +1,577 @@
+﻿<#@ template debug="false" hostspecific="false" language="C#" #>
+<#@ output extension=".cs"#>
+<#@ assembly name="System.Core" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.Text.RegularExpressions" #>
+<#@ import namespace="System.IO" #>
+<# /* Uncomment the following line when debugging */ #>
+<#/*@assembly name="C:/Users/PerfectedTech/Documents/lbxamarinsdk-generator/C#/LBXamarinSDK/bin/Debug/Newtonsoft.Json.dll"*/#>
+<# /* ^^ */ #>
+<#@ import namespace="Newtonsoft.Json" #>
+<#@ import namespace="Newtonsoft.Json.Linq" #>
+<#@ parameter name="jsonModel" type="System.String" #>
+<#@ parameter name="force" type="System.Boolean" #>
+<#
+// Uncomment the following line when debugging:
+//string jsonModel = File.ReadAllText("D:/debug.txt");
+// ^^
+JObject modelsJSON = JObject.Parse(jsonModel);
+#>
+
+/**
+ *** Dynamic Repositories ***
+ */
+
+namespace LBXamarinSDK
+{
+    namespace LBRepo
+    {
+		/* CRUD Interface holds the basic CRUD operations for all models.
+		   In turn, all repositories will inherit from this.
+		*/
+        public abstract class CRUDInterface<T> where T : LBModel
+        {
+			private static readonly Dictionary<string, string> APIDictionary = new Dictionary<string, string>
+            {
+<#
+// Create dictionary for CRUD methods
+IList<string> crudsList = new List<string>()
+{
+	"create",
+	"upsert",
+	"exists",
+	"findbyid",
+	"find",
+	"findone",
+	"updateall",
+	"deletebyid",
+	"count",
+	"prototype$updateattributes"  
+};
+
+List<string> modelNames = modelsJSON.First.First.Select(p=>p.First.First.ToString().ToLower()).ToList();
+modelNames.Add("accesstoken");
+foreach (var model in modelsJSON.First.First)
+{
+	foreach(var rel in model.ElementAt(6).First) 
+		if(rel != null && (string)rel.First.ElementAt(2).First == "hasAndBelongsToMany") 
+			modelNames.Add(((string)model.First.First + (string)rel.First.ElementAt(1)).ToLower());
+}
+
+foreach (var model in modelsJSON.First.First)
+{
+	// Get all methods and URLs
+	var rawMethodsData = JObject.Parse(model.ElementAt(8).First.ToString());
+    List<string> methodNames = rawMethodsData.Properties().Select(p => p.Name).ToList();
+    List<string> methodURLS = rawMethodsData.PropertyValues().Select(p => p.First.First.ToString().Trim().Substring(1)).ToList();
+
+	// Extract the CRUD methods and URLs from the general list
+    var methodsZip = methodNames.Zip(methodURLS, (names, urls) => new { names, urls }).ToList();
+    var zippedCruds = methodsZip.Where(pair => crudsList.Contains(pair.names.ToLower())).ToList();
+    List<string> crudMethodNames = zippedCruds.Select(pair => pair.names).ToList();
+    List<string> crudMethodURLS = zippedCruds.Select(pair => pair.urls).ToList();
+
+	String modelName = model.First.First.ToString();
+	for(int i = 0; i < crudMethodNames.Count(); ++i)
+	{
+		// Create entry in the dictionary for an API Crud method
+		#>				{"<#=(modelName + "/" + crudMethodNames[i].ToString()).ToLower()#>", "<#=crudMethodURLS[i]#>"}, 
+<#
+	}
+}
+#>
+			};
+
+			// Getter for API paths of CRUD methods
+			protected static String getAPIPath(String crudMethodName)
+            {
+				Type baseType = typeof(T);
+				String dictionaryKey = string.Format("{0}/{1}", baseType.Name, crudMethodName).ToLower();
+
+				if(!APIDictionary.ContainsKey(dictionaryKey))
+				{
+					if(Gateway.GetDebugMode())
+						Debug.WriteLine("Error - no known CRUD path for " + dictionaryKey);
+					throw new Exception();
+				}
+				return APIDictionary[dictionaryKey];
+            }
+
+            /* All the basic CRUD: Hardcoded */
+
+			/*
+			 * Create a new instance of the model and persist it into the data source
+			 */
+            public static async Task<T> Create(T theModel)
+            {
+                String APIPath = getAPIPath("Create");
+                var response = await Gateway.PerformPostRequest<T, T>(theModel, APIPath).ConfigureAwait(false);
+                return response;
+            }
+
+			/*
+			 * Update an existing model instance or insert a new one into the data source
+			 */
+            public static async Task<T> Upsert(T theModel)
+            {
+                String APIPath = getAPIPath("Upsert");
+                var response = await Gateway.PerformPutRequest<T, T>(theModel, APIPath).ConfigureAwait(false);
+                return response;
+            }
+
+			/*
+			 * Check whether a model instance exists in the data source
+			 */
+            public static async Task<bool> Exists(string ID)
+            {
+                String APIPath = getAPIPath("Exists");
+                APIPath = APIPath.Replace(":id", ID);
+                var response = await Gateway.PerformGetRequest<object>(APIPath).ConfigureAwait(false);
+                return JObject.Parse(response.ToString()).First.First.ToObject<bool>();
+            }
+
+			/*
+			 * Find a model instance by id from the data source
+			 */
+            public static async Task<T> FindById(String ID)
+            {
+                String APIPath = getAPIPath("FindById");
+                APIPath = APIPath.Replace(":id", ID);
+                var response = await Gateway.PerformGetRequest<T>(APIPath).ConfigureAwait(false);
+                return response;
+            }
+
+			/*
+			 * Find all instances of the model matched by filter from the data source
+			 */
+            public static async Task<IList<T>> Find(string filter = "")
+            {
+                String APIPath = getAPIPath("Find");
+                IDictionary<string, string> queryStrings = new Dictionary<string, string>();
+				queryStrings.Add("filter", filter);
+                var response = await Gateway.PerformGetRequest<T[]>(APIPath, queryStrings).ConfigureAwait(false);
+                return response.ToList();
+            }
+
+			/*
+			 * Find first instance of the model matched by filter from the data source
+			 */
+            public static async Task<T> FindOne(string filter = "")
+            {
+                String APIPath = getAPIPath("FindOne");
+				IDictionary<string, string> queryStrings = new Dictionary<string, string>();
+				queryStrings.Add("filter", filter);
+                var response = await Gateway.PerformGetRequest<T>(APIPath, queryStrings).ConfigureAwait(false);
+                return response;
+            }
+
+			/*
+			 * Update instances of the model matched by where from the data source
+			 */
+            public static async Task UpdateAll(T updateModel, string whereFilter)
+            {
+				String APIPath = getAPIPath("UpdateAll");
+				IDictionary<string, string> queryStrings = new Dictionary<string, string>();
+				queryStrings.Add("where", whereFilter);
+                var response = await Gateway.PerformPostRequest<T, string>(updateModel, APIPath, queryStrings).ConfigureAwait(false);
+            }
+
+			/*
+			 * Delete a model instance by id from the data source
+			 */
+            public static async Task DeleteById(String ID)
+            {
+				String APIPath = getAPIPath("DeleteById");
+                APIPath = APIPath.Replace(":id", ID);
+                var response = await Gateway.PerformRequest<string>(APIPath, "", "DELETE").ConfigureAwait(false);
+            }
+
+			/*
+			 * Count instances of the model matched by where from the data source
+			 */
+            public static async Task<int> Count(string whereFilter = "")
+            {
+                String APIPath = getAPIPath("Count");
+				IDictionary<string, string> queryStrings = new Dictionary<string, string>();
+				queryStrings.Add("where", whereFilter);
+                var response = await Gateway.PerformGetRequest<object>(APIPath, queryStrings).ConfigureAwait(false);
+                return JObject.Parse(response.ToString()).First.First.ToObject<int>();
+            }
+
+			/*
+			 * Update attributes for a model instance and persist it into the data source
+			 */
+            public static async Task<T> UpdateById(String ID, T update)
+            {
+                String APIPath = getAPIPath("prototype$updateAttributes");
+                APIPath = APIPath.Replace(":id", ID);
+                var response = await Gateway.PerformPutRequest<T, T>(update, APIPath).ConfigureAwait(false);
+                return response;
+            }
+        }
+
+		// Dynamic repositories for all Dynamic models:
+<#
+		foreach (var model in modelsJSON.First.First)
+        {
+			// Determine Repository name by using the plural name of the model. E.g. Model Car and repoistory Cars.
+			string modelName = model.First.First.ToString();
+			string repositoryName = model.ElementAt(1).First.ToString();
+			repositoryName = validateRepositoryName(repositoryName, modelName);
+
+#>		public class <#= repositoryName #> : CRUDInterface<<#=modelName#>>
+		{
+<#
+			// Get the methods names of this model and iterate through to create them
+			List<string> parsedMethodNames = new List<string>();
+			foreach (var methodJsonToken in model.ElementAt(8).First)
+			{
+				var rawMethodData = JObject.Parse("{" + methodJsonToken + "}");
+                string methodName = rawMethodData.Properties().Select(p => p.Name).ToList()[0].ToString();
+
+				// Create Change Stream methods, still unsupported. Remove this if clause when adding support for them.
+				if(methodName == "createChangeStream")
+                {
+					continue;
+                }
+
+				if (crudsList.Contains(methodName.ToLower()))
+				{
+					// Skip Crud methods, they're already included as inherited members from hardcoded CRUDInterface
+					parsedMethodNames.Add(methodName.ToLower());
+					continue;
+				}
+
+				string returnTypeOrig = initialParseReturnType((string)rawMethodData.First.First.ElementAt(3).First.First);
+				bool jsonIsArraySpecification = rawMethodData.First.First.ElementAt(3).First.Count() > 0 ? (bool)rawMethodData.First.First.ElementAt(3).First.ElementAt(1).First : false;
+                bool returnTypeIsArray = determineReturnIsArray(jsonIsArraySpecification, returnTypeOrig);
+				string returnType = finalParseReturnType(returnTypeOrig, returnTypeIsArray);
+				bool returnIsRoot = rawMethodData.First.First.ElementAt(3).First.Count() > 0 ? (bool)rawMethodData.First.First.ElementAt(3).First.ElementAt(2).First : false;
+				
+				// Get the parameters passed to the method
+				var paramsRawData = JObject.Parse(methodJsonToken.First.ElementAt(2).First.ToString());
+                IList<string> paramsNames = paramsRawData.Properties().Select(p => p.Name).ToList();
+                List<string> paramsTypes = paramsRawData.PropertyValues().Select(p => p.First.First.ToString()).ToList();
+                List<string> paramsPlacements = paramsRawData.PropertyValues().Select(p => p.ElementAt(1).First.ToString()).ToList();
+
+				// Force removal of this method if it is not supported yet
+				if(force && (errMessages.ContainsKey(returnTypeOrig.ToLower()) || paramsPlacements.Where(p=>p=="body").ToList().Count > 1 || isUnknownType(returnTypeOrig, modelNames)))
+				{
+					continue;
+				}
+
+				// Create a presentable, meaningful and C# legal method name. TODO: Improve the method naming to be more meaningful and distinct
+				string presentableMethodName = createPresentableMethodName(methodName, ref parsedMethodNames);
+#>
+
+			/*
+			 * <#= rawMethodData.First.First.ElementAt(4).First.ToString() #>
+<# if(errMessages.ContainsKey(returnTypeOrig.ToLower())) {#>
+			 * {.{.Error: <#=errMessages[returnTypeOrig.ToLower()]#> at <#=modelName#>'s <#=presentableMethodName#>().}.}
+<#}#>
+<# if(paramsPlacements.Where(p=>p=="body").ToList().Count > 1) {#>
+			 * {.{.Error: <#=errMessages["more_than_one_body_param"]#> at <#=modelName#>'s <#=presentableMethodName#>().}.}
+<#}#>
+<# if(isUnknownType(returnTypeOrig, modelNames)) {#>
+			 * {.{.Error: <#=errMessages["unknown_model"]#> '<#=returnTypeOrig#>' at <#=modelName#>'s <#=presentableMethodName#>().}.}
+			 * {.{.       Is it defined in model-config.json as public?.}.}
+<#}#>
+			 */
+			public static async Task<#=returnType#> <#=presentableMethodName#>(<#
+
+				// Sort the parameters so that the query parameters, to which we add as default parameters, will be last.
+				var secondaryZip = paramsNames.Zip(paramsTypes, (x, y) => new { x, y }).ToList();
+				var zip = paramsPlacements.Zip(secondaryZip, (x, y) => new { x, y }).OrderBy(pair => pair.x).ToList().ToList();
+				paramsPlacements = zip.Select(pair => pair.x).ToList();
+				paramsNames = zip.Select(pair => pair.y).ToList().Select(pair => pair.x).ToList();
+				paramsTypes = zip.Select(pair => pair.y).ToList().Select(pair => pair.y).ToList();
+				
+				// After being sorted, add the parameter to the argument list of the function
+				for(int i = 0; i < paramsNames.Count; ++i)
+				{
+					#><#= determineParamType(paramsTypes.ElementAt(i), 
+											 paramsPlacements.ElementAt(i), 
+											 model.First.First.ToString())#> <#=paramsNames.ElementAt(i)#><#=(paramsPlacements.ElementAt(i) == "query" ? " = default(" + convertToCSType(paramsTypes.ElementAt(i)) +")" : "")#><#if (i < paramsNames.Count - 1) { #>, <#}
+				}
+				
+#>)
+			{
+				string APIPath = "<#= rawMethodData.First.First.First.First.ToString().Trim().Substring(1)#>";
+				IDictionary<string, string> queryStrings = new Dictionary<string, string>();
+				string bodyJSON = "";
+<#				// Write the addition into the request of the specific parameter, according to its 
+				for(int i = 0; i < paramsNames.Count; ++i)
+                {
+					if(paramsPlacements.ElementAt(i) == "body") 
+					{ 
+						string serializationTarget =  paramsNames[i];
+						if(isCSPrimitive(determineParamType(paramsTypes.ElementAt(i), 
+										 paramsPlacements.ElementAt(i), 
+										 model.First.First.ToString())))
+                        {
+							// If the parameter is Body type and also a primitive type, it needs to be encapsulated before serialized,
+							// corresponding to a Json structure
+							serializationTarget = "new { " + paramsNames[i] + " = " + paramsNames[i] + " }"; 
+                        }
+					#>				bodyJSON = JsonConvert.SerializeObject(<#=serializationTarget#>);
+<# }
+					if(paramsPlacements.ElementAt(i) == "query") { #>				queryStrings.Add("<#=paramsNames[i]#>", <#=paramsNames[i]#> != null ? <#=paramsNames[i]#>.ToString() : null);
+<# }
+					if(paramsPlacements.ElementAt(i) == "path") { #>				APIPath = APIPath.Replace(":<#=paramsNames[i]#>", (string)<#=paramsNames[i]#>);
+<# }
+					
+                }
+
+				// Determine the return type of the response and what should be extracted from it to be returned to caller, as well as the API method type
+				string returnStatementString = "", templatesString = "";
+				string APIMethod = rawMethodData.First.First.ElementAt(1).First.ToString();
+
+
+				determineReturnStatementAndTemplate(ref returnStatementString, ref templatesString, returnTypeOrig, returnTypeIsArray, returnIsRoot);
+				
+				
+#>				var response = await Gateway.PerformRequest<<#=templatesString#>>(APIPath, bodyJSON, "<#=APIMethod#>", queryStrings).ConfigureAwait(false);
+				<#=returnStatementString#>
+			}
+<#
+}
+#>		}
+<#
+}
+#>		
+	}
+}
+
+<#+
+
+		public static bool isUnknownType(string returnTypeOrig, List<string> modelNames)
+		{
+			if(!errMessages.ContainsKey(returnTypeOrig.ToLower()) 
+				&& !modelNames.Contains(returnTypeOrig.ToLower()) 
+				&& !isPrimitive(returnTypeOrig) 
+				&& returnTypeOrig != "void" 
+				&& returnTypeOrig.ToLower() != "jobject" 
+				&& returnTypeOrig.ToLower() != "array"
+				&& returnTypeOrig.ToLower() != "lbmodel")
+				{
+					return true;
+				}
+			return false;
+		}
+
+		public static IDictionary<string, string> errMessages = new Dictionary<string, string>()
+		{
+			{"more_than_one_return_arg", "Two return arguments"},
+			{"more_than_one_body_param", "More than one body parameter"},
+			{"unknown_model", "Unknown model"}
+		};
+
+
+		// Determines the return type of the response and what should be extracted from it to be returned to caller for a specific method REST call
+		private static void determineReturnStatementAndTemplate(ref string returnStatementString, ref string templatesString, string returnTypeOrig, bool returnTypeIsArray, bool returnIsRoot)
+		{
+			// should be object if its not root
+
+			returnStatementString = "";
+			templatesString = returnTypeOrig;
+
+			if(returnTypeIsArray)
+				templatesString = templatesString + "[]";
+
+			if(!returnIsRoot)
+            {
+				if(returnTypeOrig != "void")
+                {
+					returnStatementString = "return JObject.Parse(response.ToString()).First.First.ToObject<" + templatesString + ">();";
+					templatesString = "object";
+                }
+				else
+                {
+					templatesString = "string";
+                }
+            }
+			else
+            {
+				if(returnTypeOrig != "void")
+                {
+					returnStatementString = "return response;";
+                }
+				else
+                {
+					templatesString = "string";
+                }
+            }
+        }
+
+
+		// Determines if the return type of a method is an array
+		private static bool determineReturnIsArray(bool jsonSpecification, string returnTypeOrig)
+		{
+			bool returnTypeIsArray = false;
+                if (returnTypeOrig != "void")
+                    returnTypeIsArray = jsonSpecification;
+			return returnTypeIsArray;
+		}
+
+		// Initial parse of method return type
+		private static string finalParseReturnType(string returnTypeOrig, bool returnTypeIsArray)
+		{
+			if(returnTypeOrig == "void")
+				return "";
+
+			string returnType = returnTypeOrig;
+            if (returnTypeIsArray)
+				returnType = "IList<" + returnType + ">";
+			returnType = "<" + returnType + ">";
+			return returnType;
+        }
+
+		// Initial parse of method return type
+		private static string initialParseReturnType(string returnTypeOrig)
+		{
+			if(!string.IsNullOrEmpty(returnTypeOrig) && !isPrimitive(returnTypeOrig))
+					capitalize(returnTypeOrig);
+ 
+			if(returnTypeOrig == "PersistedModel")
+				returnTypeOrig = "LBModel";
+			returnTypeOrig = convertToCSType(returnTypeOrig, true);
+            if (String.IsNullOrEmpty(returnTypeOrig))
+				returnTypeOrig = "void";
+			return returnTypeOrig;
+        }
+
+
+		// Validates a repository name
+		private static string validateRepositoryName(string repositoryName, string modelName)
+		{
+			repositoryName = capitalize(repositoryName);
+			if(repositoryName == modelName)
+				repositoryName = repositoryName + "s";
+			return repositoryName;
+        }
+
+		// Checks if a type name is primitive, including loopback primitives such as geopoint
+		private static bool isPrimitive(string someType)
+        {
+			string input = null;
+			if(someType != null)
+				input = someType.ToLower();
+
+			if(input == "double")
+				return true;
+			if(input == "date" || input == "datetime")
+				return true;
+			if(input == "string")
+				return true;
+			if(input == "bool")
+				return true;
+			if(input == "geopoint")
+				return true;
+			return false;
+        }
+
+		// Checks if a type name is C# primitive
+		private static bool isCSPrimitive(string someType)
+        {
+			string input = null;
+			if(someType != null)
+				input = someType.ToLower();
+
+			if(input == "datetime")
+				return true;
+			if(input == "double")
+				return true;
+			if(input == "string")
+				return true;
+			if(input == "bool")
+				return true;
+			return false;
+        }
+
+		// Converts the loopback type name to c# type name. E.g. "Number" to "double"
+		private static string convertToCSType(string inputType, bool isReturnType = false)
+		{
+			string input = null;
+			if(inputType != null)
+				input = inputType.ToLower();
+
+			if(input == "object" && isReturnType)
+				return "JObject";
+
+			if(input == "number")
+				return "double";
+			if(input == "date")
+				return "DateTime";
+			if(input == "string")
+				return "string";
+			if(input == "boolean")
+				return "bool";
+			if(input == "object")
+				return "string";
+			if(input == "Buffer")
+				return "IList<int>";
+			if(input == "any")
+				return "string";
+			if(input == "objectid")
+				return "string";
+			if(input == "geopoint")
+				return "GeoPoint";
+			return capitalize(inputType);
+		}
+
+
+		// Capitalize a name
+		public static string capitalize(string input)
+		{
+			if(string.IsNullOrEmpty(input))
+				return input;
+
+			return input.ElementAt(0).ToString().ToUpper() + input.Substring(1);
+		}
+
+
+		// Determines to parameter type of a method parameter
+		private static string determineParamType(string inputType, string paramPlacement, string modelName)
+        {
+			if(paramPlacement == "body" && inputType.ToLower() == "object")
+				return modelName;
+
+			return convertToCSType(inputType);
+        }
+
+		// Creates a presentable method name from the method name given in the Json definition file which is not always presentable. 
+		// E.g. "::Cars::Driver::Find" or "__get___blarg"
+		private static string createPresentableMethodName(string inputString, ref List<string> parsedMethodNames)
+        {
+            string prototypeRegexStr = @"__([A-Za-z0-9\-]+)__([A-Za-z0-9\-]+)";
+            string associationRegexStr = @"::([A-Za-z0-9\-]+)::([A-Za-z0-9\-]+)::([A-Za-z0-9\-]+)";
+            Regex prototypeRegex = new Regex(prototypeRegexStr);
+            Regex associationRegex = new Regex(associationRegexStr);
+
+            if (prototypeRegex.IsMatch(inputString))
+            {
+                Match match = Regex.Match(inputString, prototypeRegexStr);
+                inputString =  match.Groups[1].Value + char.ToUpper(match.Groups[2].Value[0]) + match.Groups[2].Value.Substring(1);
+            }
+            else if (associationRegex.IsMatch(inputString))
+            {
+                Match match = Regex.Match(inputString, associationRegexStr);
+                inputString = match.Groups[1].Value + "For" + match.Groups[2].Value;
+            }
+			else if(inputString.StartsWith("prototype$"))
+            {
+				inputString = inputString.Substring(10);
+            }
+
+			string nameSuffix = "";
+			while(parsedMethodNames.Contains(inputString + nameSuffix))
+            {
+				nameSuffix = (int.Parse(nameSuffix != "" ? nameSuffix : "0") + 1).ToString();
+            }
+			inputString = inputString + nameSuffix;
+			parsedMethodNames.Add(inputString);
+			return inputString;
+        }
+#>
