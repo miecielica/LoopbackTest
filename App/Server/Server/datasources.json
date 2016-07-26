@@ -1,8 +1,0 @@
-{
-  "db": {
-    "name": "db",
-    "defaultForType": "db",
-    "connector": "memory",
-    "user": "user"
-  }
-}

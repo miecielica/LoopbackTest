@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://xamarin.com/schemas/2014/forms"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="LoopbackTest.Pages.LoginPage">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="10*"/>
+      <RowDefinition Height="10*"/>
+      <RowDefinition Height="10*"/>
+      <RowDefinition Height="10*"/>
+      <RowDefinition Height="10*"/>
+      <RowDefinition Height="10*"/>
+      <RowDefinition Height="10*"/>
+      <RowDefinition Height="10*"/>
+      <RowDefinition Height="10*"/>
+      <RowDefinition Height="10*"/>
+    </Grid.RowDefinitions>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="50*"/>
+      <ColumnDefinition Width="50*"/>
+    </Grid.ColumnDefinitions>
+    <Label Grid.Row="0" Grid.ColumnSpan="2" Text="Welcome to Loopbacktest" VerticalOptions="Center" HorizontalOptions="Center" />
+    <Entry Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding User}" Placeholder="eMail" FontSize="20" VerticalOptions="EndAndExpand"/>
+    <Entry Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding Password}" Placeholder="Password" IsPassword="true" FontSize="20" VerticalOptions="EndAndExpand"/>
+    <Button Grid.Row="3" Grid.ColumnSpan="2" Text="Login" Clicked="LoginClicked" IsVisible="{Binding IsLogin}" />
+    <Entry Grid.Row="3" Grid.ColumnSpan="2" Text="{Binding Username}" Placeholder="Username" IsVisible="{Binding IsRegister}" FontSize="20" VerticalOptions="EndAndExpand"/>
+    <Entry Grid.Row="4" Grid.ColumnSpan="2" Text="{Binding Firstname}" Placeholder="Firstname" IsVisible="{Binding IsRegister}" FontSize="20" VerticalOptions="EndAndExpand"/>
+    <Entry Grid.Row="5" Grid.ColumnSpan="2" Text="{Binding Lastname}" Placeholder="Lastname" IsVisible="{Binding IsRegister}" FontSize="20" VerticalOptions="EndAndExpand"/>
+    <DatePicker x:Name="DatePicker" Grid.Row="6" Grid.ColumnSpan="2" Date="{Binding Birthdate}" VerticalOptions="EndAndExpand"/>
+ 
+    
+    
+    <Button Grid.Row="7" Grid.ColumnSpan="2" Text="Register" Clicked="RegisterClicked" IsVisible="{Binding IsRegister}"/>
+    
+    <Label x:Name="RegisterLbl" Grid.Row="9" Grid.ColumnSpan="2" Text="{Binding ToggleText}" VerticalOptions="Center" HorizontalOptions="Center"/>
+
+  </Grid>
+
+
+</ContentPage>
